@@ -33,6 +33,34 @@ extern "C"{
  * @brief    This routine converts data units, and stores finalized values in
  *           an array for later output to the output files.
  *****************************************************************************/
+
+__global__  // device kernel function for treeline adjustment factors
+void treeline_adjustment_kernel() {
+	// INPUTS:
+	// options.SNOW_BAND
+	// AboveTreeLine
+	// veg_con
+	// veg_lib
+	// options.LAKES
+	// lake_var
+	// lake_con
+	//
+	// OUTPUT:
+	// TreeAdjustFactor
+	//
+	// AUTOMATIC VARS:
+	// band
+	// Cv
+	// Clake
+	//
+	// TODO: implement
+}
+
+// device setup/stub function for treeline adjustment factors
+void treeline_adjustment_device() {
+	// TODO: implement
+}
+
 //extern "C"
 void
 put_data(all_vars_struct   *all_vars,

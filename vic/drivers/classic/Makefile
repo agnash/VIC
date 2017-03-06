@@ -41,9 +41,7 @@ VICPATH = ../../vic_run
 SHELL = /bin/bash
 
 # Set CC = your compiler here
-ifndef CC
 CC=nvcc
-endif
 
 GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
 HOSTNAME := $(shell uname -n)
@@ -66,12 +64,13 @@ INCLUDES = -I ${DRIVERPATH}/include -I $(SHAREDPATH)/include -I ${VICPATH}/inclu
 # LIBRARY = -lm
 
 # Uncomment to include debugging information
-CFLAGS  =  ${INCLUDES} -g -Wall -Wextra -std=c99 \
+#CFLAGS  =  ${INCLUDES} -g -Wall -Wextra -std=c99 \
 					 -DLOG_LVL=$(LOG_LVL) \
 					 -DGIT_VERSION=\"$(GIT_VERSION)\" \
 					 -DUSERNAME=\"$(USER)\" \
 					 -DHOSTNAME=\"$(HOSTNAME)\"
-LIBRARY = -lm
+
+#LIBRARY = -lm
 
 # Uncomment to include execution profiling information
 #CFLAGS  = ${INCLUDES} -O3 -pg -Wall -Wno-unused -DLOG_LVL=$(LOG_LVL)
@@ -80,6 +79,14 @@ LIBRARY = -lm
 # Uncomment to debug memory problems using electric fence (man efence)
 #CFLAGS  = ${INCLUDES} -g -Wall -Wno-unused -DLOG_LVL=$(LOG_LVL)
 #LIBRARY = -lm -lefence -L/usr/local/lib
+
+# Uncomment this when compiler is NVCC
+CFLAGS  =  ${INCLUDES} -g -lcuda \
+					 -DLOG_LVL=$(LOG_LVL) \
+					 -DGIT_VERSION=\"$(GIT_VERSION)\" \
+					 -DUSERNAME=\"$(USER)\" \
+					 -DHOSTNAME=\"$(HOSTNAME)\"
+LIBRARY = -lcudart -lm
 
 COMPEXE = vic_classic
 EXT = .exe
@@ -99,7 +106,13 @@ SRCS = \
 	$(wildcard ${DRIVERPATH}/src/*.c) \
 	$(wildcard ${SHAREDPATH}/src/*.c)
 
+SRCS_CU = \
+	$(wildcard ${VICPATH}/src/*.cu) \
+	$(wildcard ${DRIVERPATH}/src/*.cu) \
+	$(wildcard ${SHAREDPATH}/src/*.cu)
+
 OBJS = $(SRCS:%.o=%.c)
+OBJS_CU = $(SRCS_CU:%.o=%.cu)
 
 all:
 	make depend
@@ -119,9 +132,8 @@ clean::
 	\rm -f core log
 	\rm -rf ${COMPEXE}${EXT} ${COMPEXE}${EXT}.dSYM
 
-model: $(OBJS)
-	$(CC) -o ${COMPEXE}${EXT} $(OBJS) $(CFLAGS) $(LIBRARY)
-
+model: $(OBJS) $(OBJS_CU)
+	$(CC) -o ${COMPEXE}${EXT} $(OBJS) $(OBJS_CU) $(CFLAGS) $(LIBRARY)
 # -------------------------------------------------------------
 # tags
 # so we can find our way around

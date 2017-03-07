@@ -29,36 +29,99 @@ extern "C"{
 }
 #include <cuda.h>
 
+#define CUDA_ERR_CHECK(func, ...)                                        \
+	do {                                                                      \
+		cudaError_t err;                                                      \
+		if ((err = func(__VA_ARGS__)) != cudaSuccess) {                       \
+			printf("%s in %s at line %d\n", cudaGetErrorString(err),          \
+					__FILE__, __LINE__);                                      \
+			exit(EXIT_FAILURE);                                               \
+		}                                                                     \
+	} while (0)
+
 /******************************************************************************
  * @brief    This routine converts data units, and stores finalized values in
  *           an array for later output to the output files.
  *****************************************************************************/
 
 __global__  // device kernel function for treeline adjustment factors
-void treeline_adjustment_kernel() {
-	// INPUTS:
-	// options.SNOW_BAND
-	// AboveTreeLine
-	// veg_con
-	// veg_lib
-	// options.LAKES
-	// lake_var
-	// lake_con
-	//
-	// OUTPUT:
-	// TreeAdjustFactor
-	//
-	// AUTOMATIC VARS:
-	// band
-	// Cv
-	// Clake
-	//
-	// TODO: implement
+void treeline_adjustment_kernel(
+		size_t snowBand,
+		double sarea,
+		double basin,
+		bool lakes,
+		bool *aboveTreeLine,
+		veg_con_struct *vegCon,
+		veg_lib_struct *vegLib,
+		double *treeAdjustFactor) {
+
+	size_t veg, clake;
+	size_t band = blockIdx.x * blockDim.x + threadIdx.x;
+	double Cv = 0;
+	if (band < snowBand) {
+		if (aboveTreeLine[band]) {
+			for (veg = 0; veg < vegCon[0].vegetat_type_num; veg++) {
+				if (vegLib[vegCon[veg].veg_class].overstory) {
+					if (lakes && vegCon[veg].LAKE) {
+						if (band == 0) {
+							clake = sarea / basin;
+							Cv += vegCon[veg].Cv * (1 - clake);
+						}
+					} else {
+						Cv += vegCon[veg].Cv;
+					}
+				}
+			}
+			treeAdjustFactor[band] = 1. / (1. - Cv);
+		} else {
+			treeAdjustFactor[band] = 1.;
+		}
+	}
 }
 
 // device setup/stub function for treeline adjustment factors
-void treeline_adjustment_device() {
-	// TODO: implement
+void treeline_adjustment_device(
+		size_t snowBand,
+		double sarea,
+		double basin,
+		bool lakes,
+		bool *aboveTreeLine_h,
+		veg_con_struct *vegCon_h,
+		veg_lib_struct *vegLib_h,
+		double *treeAdjustFactor_h) {
+
+	bool *aboveTreeLine_d;
+	double *treeAdjustFactor_d;
+	// TODO: May be able to load both struct arrays into global or constant
+	// memory once at beginning of model execution (memory-space allowing)
+	// instead of before each time step (It may be the same data each time?)
+	veg_con_struct *vegCon_d;
+	veg_lib_struct *vegLib_d;
+
+	size_t aboveTreeLineSize, vegConSize, vegLibSize, treeAdjustFactorSize;
+	aboveTreeLineSize = snowBand * sizeof(bool);
+	vegConSize = vegCon_h[0].vegetat_type_num * sizeof(veg_con_struct);
+	vegLibSize = vegCon_h[0].vegetat_type_num * sizeof(veg_lib_struct);
+	treeAdjustFactorSize = MAX_BANDS * sizeof(double);
+
+	CUDA_ERR_CHECK(cudaMalloc, (void **)&aboveTreeLine_d, aboveTreeLineSize);
+	CUDA_ERR_CHECK(cudaMemcpy, aboveTreeLine_d, aboveTreeLine_h, aboveTreeLineSize, cudaMemcpyHostToDevice);
+	CUDA_ERR_CHECK(cudaMalloc, (void **)&vegCon_d, vegConSize);
+	CUDA_ERR_CHECK(cudaMemcpy, vegCon_d, vegCon_h, vegConSize, cudaMemcpyHostToDevice);
+	CUDA_ERR_CHECK(cudaMalloc, (void **)&vegLib_d, vegLibSize);
+	CUDA_ERR_CHECK(cudaMemcpy, vegLib_d, vegLib_h, vegLibSize, cudaMemcpyHostToDevice);
+	CUDA_ERR_CHECK(cudaMalloc, (void **)&treeAdjustFactor_d, treeAdjustFactorSize);
+
+	// TODO: Refactor - just testing with 16 threads per block right now
+	treeline_adjustment_kernel<<<ceil(snowBand / 16.0), 16>>>(
+			snowBand, sarea, basin, lakes,
+			aboveTreeLine_d, vegCon_d, vegLib_d, treeAdjustFactor_d);
+
+	CUDA_ERR_CHECK(cudaMemcpy, treeAdjustFactor_h, treeAdjustFactor_d, treeAdjustFactorSize, cudaMemcpyDeviceToHost);
+	CUDA_ERR_CHECK(cudaFree, aboveTreeLine_d);
+	CUDA_ERR_CHECK(cudaFree, vegCon_d);
+	CUDA_ERR_CHECK(cudaFree, vegLib_d);
+	CUDA_ERR_CHECK(cudaFree, treeAdjustFactor_d);
 }
 
 //extern "C"
@@ -124,7 +187,18 @@ put_data(all_vars_struct   *all_vars,
     dt_sec = global_param.dt;
 
     // Compute treeline adjustment factors
-    for (band = 0; band < options.SNOW_BAND; band++) {
+
+	treeline_adjustment_device(
+			options.SNOW_BAND,
+			lake_var.sarea,
+			lake_con->basin[0],
+			options.LAKES,
+			AboveTreeLine,
+			veg_con,
+			veg_lib,
+			TreeAdjustFactor);
+
+    /*for (band = 0; band < options.SNOW_BAND; band++) {
         if (AboveTreeLine[band]) {
             Cv = 0;
             for (veg = 0; veg < veg_con[0].vegetat_type_num; veg++) {
@@ -150,7 +224,7 @@ put_data(all_vars_struct   *all_vars,
             log_warn("Tree adjust factor for band %zu is equal to %f.",
                      band, TreeAdjustFactor[band]);
         }
-    }
+    }*/
 
     cv_baresoil = 0;
     cv_veg = 0;

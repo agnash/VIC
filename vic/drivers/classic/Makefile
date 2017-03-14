@@ -41,9 +41,10 @@ VICPATH = ../../vic_run
 SHELL = /bin/bash
 
 # Set CC = your compiler here
-ifndef CC
+#ifndef CC
+#CC=nvcc
 CC=nvcc
-endif
+#endif
 
 GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
 HOSTNAME := $(shell uname -n)
@@ -63,23 +64,24 @@ INCLUDES = -I ${DRIVERPATH}/include -I $(SHAREDPATH)/include -I ${VICPATH}/inclu
 
 # Uncomment for normal optimized code flags (fastest run option)
 #CFLAGS  = -O3 -Wall -Wno-unused
-# LIBRARY = -lm
+# LIBRARY = -fopenmp -lm
 
 # Uncomment to include debugging information
-CFLAGS  =  ${INCLUDES} -g -Wall -Wextra -std=c99 \
+CFLAGS  =  ${INCLUDES} -g  \
 					 -DLOG_LVL=$(LOG_LVL) \
 					 -DGIT_VERSION=\"$(GIT_VERSION)\" \
 					 -DUSERNAME=\"$(USER)\" \
 					 -DHOSTNAME=\"$(HOSTNAME)\"
-LIBRARY = -lm
+# LIBRARY = -fopenmp -lm
+LIBRARY = -Xcompiler " -openmp" -lm
 
 # Uncomment to include execution profiling information
 #CFLAGS  = ${INCLUDES} -O3 -pg -Wall -Wno-unused -DLOG_LVL=$(LOG_LVL)
-#LIBRARY = -lm
+#LIBRARY = -fopenmp -lm
 
 # Uncomment to debug memory problems using electric fence (man efence)
 #CFLAGS  = ${INCLUDES} -g -Wall -Wno-unused -DLOG_LVL=$(LOG_LVL)
-#LIBRARY = -lm -lefence -L/usr/local/lib
+#LIBRARY = -fopenmp -lm -lefence -L/usr/local/lib
 
 COMPEXE = vic_classic
 EXT = .exe
@@ -97,7 +99,8 @@ HDRS = \
 SRCS = \
 	$(wildcard ${VICPATH}/src/*.c) \
 	$(wildcard ${DRIVERPATH}/src/*.c) \
-	$(wildcard ${SHAREDPATH}/src/*.c)
+	$(wildcard ${SHAREDPATH}/src/*.c) # \
+#	$(wildcard ${SHAREDPATH}/src/agg_data.cu)
 
 OBJS = $(SRCS:%.o=%.c)
 

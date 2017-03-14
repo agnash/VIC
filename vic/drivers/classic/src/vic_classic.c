@@ -25,7 +25,8 @@
  *****************************************************************************/
 
 #include <vic_driver_classic.h>
-#include <cuda.h>
+//#include <cuda.h>
+#include <omp.h>
 
 // global variables
 int                 flag;
@@ -170,7 +171,11 @@ main(int   argc,
     // start vic run timer
     timer_start(&(global_timers[TIMER_VIC_RUN]));
 
-    while (!MODEL_DONE) {
+//    while (!MODEL_DONE) {
+#pragma omp parallel for schedule(static) private(veg_con, lake_con, soil_con, streamnum, all_vars, rec, ErrorFlag, RUN_MODEL, MODEL_DONE)
+      for (cellnum = -1; cellnum < 15; cellnum++) {
+#pragma omp critical 
+{
         read_soilparam(filep.soilparam, &soil_con, &RUN_MODEL, &MODEL_DONE);
 
         if (RUN_MODEL) {
@@ -191,6 +196,8 @@ main(int   argc,
                                  &streams, dmy);
 
             /** Reset agg_alarm for Each Stream **/
+//7
+//#pragma omp parallel for schedule(static) private(n)
             for (streamnum = 0;
                  streamnum < (size_t) options.Noutstreams;
                  streamnum++) {
@@ -232,7 +239,7 @@ main(int   argc,
             /******************************************
                Run Model in Grid Cell for all Time Steps
             ******************************************/
-
+}
             for (rec = startrec; rec < global_param.nrecs; rec++) {
                 // Set global reference string (for debugging inside vic_run)
                 sprint_dmy(dmy_str, &(dmy[rec]));
@@ -260,7 +267,8 @@ main(int   argc,
                 **************************************************/
                 put_data(&all_vars, &force[rec], &soil_con, veg_con, veg_lib,
                          &lake_con, out_data[0], &save_data, &cell_timer);
-
+//8
+#pragma omp parallel for schedule(static)
                 for (streamnum = 0;
                      streamnum < options.Noutstreams;
                      streamnum++) {

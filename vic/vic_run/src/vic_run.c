@@ -26,6 +26,7 @@
 ******************************************************************************/
 
 #include <vic_run.h>
+#include <omp.h>
 
 veg_lib_struct *vic_run_veg_lib;
 
@@ -130,8 +131,10 @@ vic_run(force_data_struct   *force,
     force->out_snow = 0;
 
     // Convert LAI from global to local
+//1
+//#pragma omp parallel for schedule(static) private(band)
     for (iveg = 0; iveg < Nveg; iveg++) {
-        veg_class = veg_con[iveg].veg_class;
+//        veg_class = veg_con[iveg].veg_class;
         for (band = 0; band < Nbands; band++) {
             veg_var[iveg][band].LAI /= veg_var[iveg][band].fcanopy;
             veg_var[iveg][band].Wdew /= veg_var[iveg][band].fcanopy;
@@ -145,7 +148,19 @@ vic_run(force_data_struct   *force,
        Solve Energy and/or Water Balance for Each
        Vegetation Type
     **************************************************/
+//2
+//#pragma omp parallel for schedule(static) firstprivate(lake_var) private(cidx, j, band, Nbands, fraci, lakefrac, veg_class, wind_h, bare_albedo, surf_atten, overstory, height, ErrorFlag) reduction(*:Cv)
     for (iveg = 0; iveg <= Nveg; iveg++) {
+
+        double 			 areai; // replaces lake_var->areai
+        double                   out_prec[2 * MAX_BANDS];
+        double                   out_rain[2 * MAX_BANDS];
+        double                   out_snow[2 * MAX_BANDS];
+    	double                   displacement[3];
+    	double                   roughness[3];
+    	double                   ref_height[3];
+   	double                   aero_resist[3];
+
         /** Solve Veg Type only if Coverage Greater than 0% **/
         if (veg_con[iveg].Cv > 0.0) {
             Cv = veg_con[iveg].Cv;
@@ -154,14 +169,14 @@ vic_run(force_data_struct   *force,
             /** Lake-specific processing **/
             if (veg_con[iveg].LAKE) {
                 /* Update areai to equal new ice area from previous time step. */
-                lake_var->areai = lake_var->new_ice_area;
+                areai = lake_var->new_ice_area;
 
                 /* Compute lake fraction and ice-covered fraction */
-                if (lake_var->areai < 0) {
-                    lake_var->areai = 0;
+                if (areai < 0) {
+                    areai = 0;
                 }
                 if (lake_var->sarea > 0) {
-                    fraci = lake_var->areai / lake_var->sarea;
+                    fraci = areai / lake_var->sarea;
                     if (fraci > 1.0) {
                         fraci = 1.0;
                     }
@@ -182,7 +197,7 @@ vic_run(force_data_struct   *force,
             /**************************************************
                Initialize Model Parameters
             **************************************************/
-
+	    //#pragma omp parallel for schedule(static)
             for (band = 0; band < Nbands; band++) {
                 if (soil_con->AreaFract[band] > 0) {
                     /* Initialize energy balance variables */
@@ -197,6 +212,7 @@ vic_run(force_data_struct   *force,
                 }
             }
 
+	    //#pragma omp parallel for schedule(static)	    
             /* Initialize precipitation storage */
             for (j = 0; j < 2 * MAX_BANDS; j++) {
                 out_prec[j] = 0;
@@ -209,6 +225,7 @@ vic_run(force_data_struct   *force,
 
             /** Initialize other veg vars **/
             if (iveg < Nveg) {
+	      //#pragma omp parallel for schedule(static)
                 for (band = 0; band < Nbands; band++) {
                     veg_var[iveg][band].rc = param.HUGE_RESIST;
                 }
@@ -272,9 +289,9 @@ vic_run(force_data_struct   *force,
                                         displacement, ref_height,
                                         roughness);
             if (ErrorFlag == ERROR) {
-                return (ERROR);
+ //               return (ERROR);
             }
-
+	    //#pragma omp parallel for schedule(static)
             /* Initialize final aerodynamic resistance values */
             for (band = 0; band < Nbands; band++) {
                 if (soil_con->AreaFract[band] > 0) {
@@ -309,10 +326,13 @@ vic_run(force_data_struct   *force,
 
             /******************************
                Solve ground surface fluxes
-            ******************************/
 
+            ******************************/
+//3
+#pragma omp parallel for schedule(static) private(lag_one, sigma_slope, fetch, ErrorFlag, lidx)
             for (band = 0; band < Nbands; band++) {
-                if (soil_con->AreaFract[band] > 0) {
+
+	      if (soil_con->AreaFract[band] > 0) {
                     lag_one = veg_con[iveg].lag_one;
                     sigma_slope = veg_con[iveg].sigma_slope;
                     fetch = veg_con[iveg].fetch;
@@ -342,7 +362,7 @@ vic_run(force_data_struct   *force,
                                                veg_con[iveg].CanopLayerBnd);
 
                     if (ErrorFlag == ERROR) {
-                        return (ERROR);
+		      // return (ERROR);
                     }
 
                     force->out_prec +=
@@ -375,6 +395,8 @@ vic_run(force_data_struct   *force,
     } /** end of vegetation loop **/
 
     /* Convert LAI back to global */
+//4
+//#pragma omp parallel for schedule(static) private(band)
     for (iveg = 0; iveg < Nveg; iveg++) {
         for (band = 0; band < Nbands; band++) {
             veg_var[iveg][band].LAI *= veg_var[iveg][band].fcanopy;
@@ -393,6 +415,8 @@ vic_run(force_data_struct   *force,
         sum_runoff = sum_baseflow = 0;
 
         // Loop through all vegetation tiles
+//5
+#pragma omp parallel for schedule(static) private(Cv, Nbands) 
         for (iveg = 0; iveg <= Nveg; iveg++) {
             /** Solve Veg Tile only if Coverage Greater than 0% **/
             if (veg_con[iveg].Cv > 0.) {
@@ -404,6 +428,8 @@ vic_run(force_data_struct   *force,
                 }
 
                 // Loop through snow elevation bands
+//6
+#pragma omp parallel for schedule(static) private(band) reduction(+:wetland_runoff) reduction(+:wetland_baseflow) reduction(+:sum_runoff) reduction(+:sum_baseflow)
                 for (band = 0; band < Nbands; band++) {
                     if (soil_con->AreaFract[band] > 0) {
                         if (veg_con[iveg].LAKE) {

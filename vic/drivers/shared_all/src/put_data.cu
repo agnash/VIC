@@ -43,6 +43,24 @@ extern "C"{
  * @brief    This routine converts data units, and stores finalized values in
  *           an array for later output to the output files.
  *****************************************************************************/
+/*
+store_op_vegetation_types(veg_con_struct *veg_con, option_struct options, lake_var_struct *lake_var, double basin, veg_lib_struct *veg_lib,
+        double *AreaFract, double *TreeAdjustFactor, bool *AboveTreeLine, 
+        cell_data_struct **cell, veg_var_struct **veg_var, snow_data_struct **snow, double *frost_fract, double frost_slope,
+        double **out_data)
+{
+    int Nvegs = veg_con[0].vegetat_type_num; 
+    int Nbands = options.SNOW_BAND;
+    int size = Nvegs * Nbands;
+
+    lake_var_struct *lake_var_d;
+    veg_var_struct **veg_var_d;
+    snow_data_struct **snow_d;
+    double *frost_fract_d;
+    double **out_data;
+
+}
+*/
 
 __global__  // device kernel function for treeline adjustment factors
 void treeline_adjustment_kernel(
@@ -270,6 +288,12 @@ put_data(all_vars_struct   *all_vars,
     /****************************************
        Store Output for all Vegetation Types (except lakes)
     ****************************************/
+/*
+    store_op_vegetation_types(veg_con, options, &lake_var, lake_con->basin[0], veg_lib,
+        AreaFract, TreeAdjustFactor, AboveTreeLine, 
+        cell, veg_var, snow, frost_fract, frost_slope)
+*/
+
     for (veg = 0; veg <= veg_con[0].vegetat_type_num; veg++) {
         Cv = veg_con[veg].Cv;
         Clake = 0;
@@ -682,6 +706,110 @@ put_data(all_vars_struct   *all_vars,
 /******************************************************************************
  * @brief    This routine collects water balance terms.
  *****************************************************************************/
+__global__ void rec_evap_components(layer_data_struct *layer_d, 
+                               double            areafactor, 
+                               double            *out_evap_bare, 
+                               double            *out_transp_veg, 
+                               double            *temp_evap, 
+                               int               len, 
+                               bool              hasveg,
+                               double            *evap_data,
+                               double            *transp_data)
+{
+    extern __shared__ double evap_d[];
+    extern __shared__ double transp_d[];
+    extern __shared__ double temp_evap_d[];
+    
+    unsigned int tid = threadIdx.x;
+    unsigned int i   = blockIdx.x * blockDim.x + threadIdx.x;
+
+    evap_d[tid]      = *evap_data;
+    transp_d[tid]    = *transp_data;
+    temp_evap_d[tid] = 0.0;
+
+    __syncthreads();
+
+    if(i<len)
+    {
+        for(unsigned int s=blockDim.x/2; s>0; s>>1) {
+            if(tid<s) {
+                temp_evap_d[tid] += layer_d[i].evap;
+                if (hasveg) {
+                    evap_d[tid] += layer_d[i].evap *
+                                   layer_d[i].bare_evap_frac *
+                                   areafactor;
+                    transp_d[tid] += layer_d[i].evap *
+                                     (1 - layer_d[i].bare_evap_frac) * 
+                                     areafactor;
+                }
+                else {
+                    evap_d[tid] += layer_d[i].evap * areafactor;
+                }
+            }
+            __syncthreads();
+
+            if(tid==0) {
+                *out_evap_bare = evap_d[tid];
+                *out_transp_veg = transp_d[tid];
+                *temp_evap = temp_evap_d[tid];
+            }
+        }
+    }
+}
+
+
+void record_evaporation_components(layer_data_struct *layer, 
+                                   double             AreaFactor, 
+                                   int                length, 
+                                   bool               hasveg,
+                                   double             *evap_data,
+                                   double             *transp_data,
+                                   double             *temp)
+{
+
+    layer_data_struct *layer_d;
+    double            *out_evap_bare;
+    double            *out_transp_veg;
+    double            *temp_evap;
+
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&layer_d, 
+                                length*sizeof(layer_data_struct)); 
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_evap_bare, sizeof(double)); 
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_transp_veg, sizeof(double));
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&temp_evap, sizeof(double));
+
+    CUDA_ERR_CHECK(cudaMemcpy, layer_d, layer, 
+                    length*sizeof(layer_data_struct), 
+                    cudaMemcpyHostToDevice);
+
+    rec_evap_components<<<ceil(length/16.0), 16>>>(layer_d, 
+                                                   AreaFactor,
+                                                   out_evap_bare,  
+                                                   out_transp_veg, 
+                                                   temp_evap, 
+                                                   length, 
+                                                   hasveg, evap_data, transp_data);
+
+    //printf("evap_data: %lf\n",evap_data);
+    //printf("evap_data_pntr: %f\n",*evap_data);
+    CUDA_ERR_CHECK(cudaMemcpy, evap_data, out_evap_bare, 
+                    sizeof(double), 
+                    cudaMemcpyDeviceToHost);
+
+    CUDA_ERR_CHECK(cudaMemcpy, transp_data, out_transp_veg,
+                    sizeof(double), 
+                    cudaMemcpyDeviceToHost);
+    CUDA_ERR_CHECK(cudaMemcpy, temp, temp_evap, 
+                    sizeof(double), 
+                    cudaMemcpyDeviceToHost);
+ 
+    CUDA_ERR_CHECK(cudaFree, layer_d);
+    CUDA_ERR_CHECK(cudaFree, temp_evap);
+    CUDA_ERR_CHECK(cudaFree, out_evap_bare);
+    CUDA_ERR_CHECK(cudaFree, out_transp_veg);
+
+}
+
 void
 collect_wb_terms(cell_data_struct cell,
                  veg_var_struct   veg_var,
@@ -709,7 +837,16 @@ collect_wb_terms(cell_data_struct cell,
 
     AreaFactor = Cv * AreaFract * TreeAdjustFactor * lakefactor;
 
+    printf("out_data: %f\n",out_data[OUT_EVAP_BARE][0]);
+
     /** record evaporation components **/
+    record_evaporation_components(cell.layer, AreaFactor, 
+                                              options.Nlayer, HasVeg, 
+                                              &(out_data[OUT_EVAP_BARE][0]), 
+                                              &(out_data[OUT_TRANSP_VEG][0]),
+                                              &tmp_evap);
+
+    /*
     tmp_evap = 0.0;
     for (index = 0; index < options.Nlayer; index++) {
         tmp_evap += cell.layer[index].evap;
@@ -728,6 +865,8 @@ collect_wb_terms(cell_data_struct cell,
                                           AreaFactor;
         }
     }
+    */
+
     tmp_evap += snow.vapor_flux * MM_PER_M;
     out_data[OUT_SUB_SNOW][0] += snow.vapor_flux * MM_PER_M * AreaFactor;
     out_data[OUT_SUB_SURFACE][0] += snow.surface_flux * MM_PER_M *

@@ -732,27 +732,28 @@ __global__ void rec_evap_components(layer_data_struct *layer_d,
     if(i<len)
     {
         for(unsigned int s=blockDim.x/2; s>0; s>>1) {
+            __syncthreads();
             if(tid<s) {
-                temp_evap_d[tid] += layer_d[i].evap;
+                temp_evap_d[tid] += layer_d[i + s].evap;
                 if (hasveg) {
-                    evap_d[tid] += layer_d[i].evap *
-                                   layer_d[i].bare_evap_frac *
+                    evap_d[tid] += layer_d[i + s].evap *
+                                   layer_d[i + s].bare_evap_frac *
                                    areafactor;
-                    transp_d[tid] += layer_d[i].evap *
-                                     (1 - layer_d[i].bare_evap_frac) *
+                    transp_d[tid] += layer_d[i + s].evap *
+                                     (1 - layer_d[i + s].bare_evap_frac) *
                                      areafactor;
                 }
                 else {
-                    evap_d[tid] += layer_d[i].evap * areafactor;
+                    evap_d[tid] += layer_d[i + s].evap * areafactor;
                 }
             }
-            __syncthreads();
 
-            if(tid==0) {
-                *out_evap_bare = evap_d[tid];
-                *out_transp_veg = transp_d[tid];
-                *temp_evap = temp_evap_d[tid];
-            }
+        }
+        
+        if(tid==0) {
+            *out_evap_bare = evap_d[tid];
+            *out_transp_veg = transp_d[tid];
+            *temp_evap = temp_evap_d[tid];
         }
     }
 }

@@ -206,17 +206,17 @@ put_data(all_vars_struct   *all_vars,
 
     // Compute treeline adjustment factors
 
-	treeline_adjustment_device(
-			options.SNOW_BAND,
-			lake_var.sarea,
-			lake_con->basin[0],
-			options.LAKES,
-			AboveTreeLine,
-			veg_con,
-			veg_lib,
-			TreeAdjustFactor);
+	//treeline_adjustment_device(
+	//		options.SNOW_BAND,
+	//		lake_var.sarea,
+	//		lake_con->basin[0],
+	//		options.LAKES,
+	//		AboveTreeLine,
+	//		veg_con,
+	//		veg_lib,
+	//		TreeAdjustFactor);
 
-    /*for (band = 0; band < options.SNOW_BAND; band++) {
+    for (band = 0; band < options.SNOW_BAND; band++) {
         if (AboveTreeLine[band]) {
             Cv = 0;
             for (veg = 0; veg < veg_con[0].vegetat_type_num; veg++) {
@@ -242,7 +242,7 @@ put_data(all_vars_struct   *all_vars,
             log_warn("Tree adjust factor for band %zu is equal to %f.",
                      band, TreeAdjustFactor[band]);
         }
-    }*/
+    }
 
     cv_baresoil = 0;
     cv_veg = 0;
@@ -772,15 +772,15 @@ void record_evaporation_components(layer_data_struct *layer,
     //double            *out_transp_veg;
     //double            *temp_evap;
 
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&layer_d,
-                                length*sizeof(layer_data_struct));
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_evap_bare, sizeof(double));
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_transp_veg, sizeof(double));
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&temp_evap, sizeof(double));
+    //CUDA_ERR_CHECK(cudaMalloc, (void **)&layer_d,
+    //                            length*sizeof(layer_data_struct));
+    //CUDA_ERR_CHECK(cudaMalloc, (void **)&out_evap_bare, sizeof(double));
+    //CUDA_ERR_CHECK(cudaMalloc, (void **)&out_transp_veg, sizeof(double));
+    //CUDA_ERR_CHECK(cudaMalloc, (void **)&temp_evap, sizeof(double));
 
-    CUDA_ERR_CHECK(cudaMemcpy, layer_d, layer,
-                    length*sizeof(layer_data_struct),
-                    cudaMemcpyHostToDevice);
+    //CUDA_ERR_CHECK(cudaMemcpy, layer_d, layer,
+    //                length*sizeof(layer_data_struct),
+    //                cudaMemcpyHostToDevice);
 
     rec_evap_components<<<ceil(length/16.0), 16>>>(layer,
                                                    AreaFactor,
@@ -789,7 +789,7 @@ void record_evaporation_components(layer_data_struct *layer,
                                                    temp,
                                                    length,
                                                    hasveg, evap_data, transp_data);
-		cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
 
     //printf("evap_data: %lf\n",evap_data);
     //printf("evap_data_pntr: %f\n",*evap_data);
@@ -841,13 +841,13 @@ collect_wb_terms(cell_data_struct cell,
     printf("out_data: %f\n",out_data[OUT_EVAP_BARE][0]);
 
     /** record evaporation components **/
-    record_evaporation_components(cell.layer, AreaFactor,
-                                              options.Nlayer, HasVeg,
-                                              &(out_data[OUT_EVAP_BARE][0]),
-                                              &(out_data[OUT_TRANSP_VEG][0]),
-                                              &tmp_evap);
+    //record_evaporation_components(cell.layer, AreaFactor,
+    //                                          options.Nlayer, HasVeg,
+    //                                          &(out_data[OUT_EVAP_BARE][0]),
+    //                                          &(out_data[OUT_TRANSP_VEG][0]),
+    //                                          &tmp_evap);
 
-    /*
+    
     tmp_evap = 0.0;
     for (index = 0; index < options.Nlayer; index++) {
         tmp_evap += cell.layer[index].evap;
@@ -866,7 +866,6 @@ collect_wb_terms(cell_data_struct cell,
                                           AreaFactor;
         }
     }
-    */
 
     tmp_evap += snow.vapor_flux * MM_PER_M;
     out_data[OUT_SUB_SNOW][0] += snow.vapor_flux * MM_PER_M * AreaFactor;

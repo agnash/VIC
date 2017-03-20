@@ -45,11 +45,11 @@ extern "C"{
  *****************************************************************************/
 /*
 store_op_vegetation_types(veg_con_struct *veg_con, option_struct options, lake_var_struct *lake_var, double basin, veg_lib_struct *veg_lib,
-        double *AreaFract, double *TreeAdjustFactor, bool *AboveTreeLine, 
+        double *AreaFract, double *TreeAdjustFactor, bool *AboveTreeLine,
         cell_data_struct **cell, veg_var_struct **veg_var, snow_data_struct **snow, double *frost_fract, double frost_slope,
         double **out_data)
 {
-    int Nvegs = veg_con[0].vegetat_type_num; 
+    int Nvegs = veg_con[0].vegetat_type_num;
     int Nbands = options.SNOW_BAND;
     int size = Nvegs * Nbands;
 
@@ -290,7 +290,7 @@ put_data(all_vars_struct   *all_vars,
     ****************************************/
 /*
     store_op_vegetation_types(veg_con, options, &lake_var, lake_con->basin[0], veg_lib,
-        AreaFract, TreeAdjustFactor, AboveTreeLine, 
+        AreaFract, TreeAdjustFactor, AboveTreeLine,
         cell, veg_var, snow, frost_fract, frost_slope)
 */
 
@@ -706,12 +706,12 @@ put_data(all_vars_struct   *all_vars,
 /******************************************************************************
  * @brief    This routine collects water balance terms.
  *****************************************************************************/
-__global__ void rec_evap_components(layer_data_struct *layer_d, 
-                               double            areafactor, 
-                               double            *out_evap_bare, 
-                               double            *out_transp_veg, 
-                               double            *temp_evap, 
-                               int               len, 
+__global__ void rec_evap_components(layer_data_struct *layer_d,
+                               double            areafactor,
+                               double            *out_evap_bare,
+                               double            *out_transp_veg,
+                               double            *temp_evap,
+                               int               len,
                                bool              hasveg,
                                double            *evap_data,
                                double            *transp_data)
@@ -719,7 +719,7 @@ __global__ void rec_evap_components(layer_data_struct *layer_d,
     extern __shared__ double evap_d[];
     extern __shared__ double transp_d[];
     extern __shared__ double temp_evap_d[];
-    
+
     unsigned int tid = threadIdx.x;
     unsigned int i   = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -739,7 +739,7 @@ __global__ void rec_evap_components(layer_data_struct *layer_d,
                                    layer_d[i].bare_evap_frac *
                                    areafactor;
                     transp_d[tid] += layer_d[i].evap *
-                                     (1 - layer_d[i].bare_evap_frac) * 
+                                     (1 - layer_d[i].bare_evap_frac) *
                                      areafactor;
                 }
                 else {
@@ -758,55 +758,56 @@ __global__ void rec_evap_components(layer_data_struct *layer_d,
 }
 
 
-void record_evaporation_components(layer_data_struct *layer, 
-                                   double             AreaFactor, 
-                                   int                length, 
+void record_evaporation_components(layer_data_struct *layer,
+                                   double             AreaFactor,
+                                   int                length,
                                    bool               hasveg,
                                    double             *evap_data,
                                    double             *transp_data,
                                    double             *temp)
 {
 
-    layer_data_struct *layer_d;
-    double            *out_evap_bare;
-    double            *out_transp_veg;
-    double            *temp_evap;
+    //layer_data_struct *layer_d;
+    //double            *out_evap_bare;
+    //double            *out_transp_veg;
+    //double            *temp_evap;
 
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&layer_d, 
-                                length*sizeof(layer_data_struct)); 
-    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_evap_bare, sizeof(double)); 
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&layer_d,
+                                length*sizeof(layer_data_struct));
+    CUDA_ERR_CHECK(cudaMalloc, (void **)&out_evap_bare, sizeof(double));
     CUDA_ERR_CHECK(cudaMalloc, (void **)&out_transp_veg, sizeof(double));
     CUDA_ERR_CHECK(cudaMalloc, (void **)&temp_evap, sizeof(double));
 
-    CUDA_ERR_CHECK(cudaMemcpy, layer_d, layer, 
-                    length*sizeof(layer_data_struct), 
+    CUDA_ERR_CHECK(cudaMemcpy, layer_d, layer,
+                    length*sizeof(layer_data_struct),
                     cudaMemcpyHostToDevice);
 
-    rec_evap_components<<<ceil(length/16.0), 16>>>(layer_d, 
+    rec_evap_components<<<ceil(length/16.0), 16>>>(layer,
                                                    AreaFactor,
-                                                   out_evap_bare,  
-                                                   out_transp_veg, 
-                                                   temp_evap, 
-                                                   length, 
+                                                   evap_data,
+                                                   transp_data,
+                                                   temp,
+                                                   length,
                                                    hasveg, evap_data, transp_data);
+		cudaDeviceSynchronize();
 
     //printf("evap_data: %lf\n",evap_data);
     //printf("evap_data_pntr: %f\n",*evap_data);
-    CUDA_ERR_CHECK(cudaMemcpy, evap_data, out_evap_bare, 
-                    sizeof(double), 
-                    cudaMemcpyDeviceToHost);
+    //CUDA_ERR_CHECK(cudaMemcpy, evap_data, out_evap_bare,
+    //                sizeof(double),
+    //                cudaMemcpyDeviceToHost);
 
-    CUDA_ERR_CHECK(cudaMemcpy, transp_data, out_transp_veg,
-                    sizeof(double), 
-                    cudaMemcpyDeviceToHost);
-    CUDA_ERR_CHECK(cudaMemcpy, temp, temp_evap, 
-                    sizeof(double), 
-                    cudaMemcpyDeviceToHost);
- 
-    CUDA_ERR_CHECK(cudaFree, layer_d);
-    CUDA_ERR_CHECK(cudaFree, temp_evap);
-    CUDA_ERR_CHECK(cudaFree, out_evap_bare);
-    CUDA_ERR_CHECK(cudaFree, out_transp_veg);
+    //CUDA_ERR_CHECK(cudaMemcpy, transp_data, out_transp_veg,
+    //                sizeof(double),
+    //                cudaMemcpyDeviceToHost);
+    //CUDA_ERR_CHECK(cudaMemcpy, temp, temp_evap,
+    //                sizeof(double),
+    //                cudaMemcpyDeviceToHost);
+
+    //CUDA_ERR_CHECK(cudaFree, layer_d);
+    //CUDA_ERR_CHECK(cudaFree, temp_evap);
+    //CUDA_ERR_CHECK(cudaFree, out_evap_bare);
+    //CUDA_ERR_CHECK(cudaFree, out_transp_veg);
 
 }
 
@@ -840,9 +841,9 @@ collect_wb_terms(cell_data_struct cell,
     printf("out_data: %f\n",out_data[OUT_EVAP_BARE][0]);
 
     /** record evaporation components **/
-    record_evaporation_components(cell.layer, AreaFactor, 
-                                              options.Nlayer, HasVeg, 
-                                              &(out_data[OUT_EVAP_BARE][0]), 
+    record_evaporation_components(cell.layer, AreaFactor,
+                                              options.Nlayer, HasVeg,
+                                              &(out_data[OUT_EVAP_BARE][0]),
                                               &(out_data[OUT_TRANSP_VEG][0]),
                                               &tmp_evap);
 
